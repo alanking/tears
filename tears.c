@@ -261,111 +261,7 @@ void reconnect_to_server(rcComm_t* _cn) {
             if (status < 0) {
     	        error_and_exit(_cn, "Error: clientLogin failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
             }
-
-    //return status;
-
 }
-
-/*
-int rcDataObjWrite_with_reconnect(
-    rcComm_t* _cn,
-    openedDataObjInp_t* _open_obj,
-    bytesBuf_t* _data_buffer) {
-    int status = rcDataObjWrite(_cn, _open_obj, _data_buffer);
-    if (status >= 0) {
-    	fprintf(stderr, "Wrote [%d] bytes\n", status);
-        return status;
-    }
-    	    fprintf(stderr, "Write failed with status [%d]\n", status);
-
-        while (SYS_HEADER_READ_LEN_ERR == status) {
-            status = reconnect(_cn);
-
-            int open_fd = 0;
-	    if ((open_fd = rcDataObjOpen(_cn, &_open_obj)) < 0) {
-    	        error_and_exit(_cn, "Error: rcDataObjOpen failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
-	    }
-
-            char *buffer;
-            if ((buffer = malloc(buf_size)) == NULL) {
-    	        error_and_exit(conn, "Error: unable to set buffer to size %ld\n", buf_size);
-            }
-	    memset(&_open_obj, 0, sizeof(_open_obj));
-	    open_obj.l1descInx = open_fd;
-	    data_buffer.buf = buffer;
-
-            fileLseekOut_t* lseek_out = NULL; 
-	    if ((status = rcDataObjLseek(_cn, &_open_obj, &lseek_out)) < 0) {
-    	        error_and_exit(_cn, "Error: rcDataObjOpen failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
-	    }
-            if (lseek_out) {
-                free(lseek_out);
-            }
-
-	    long written_out;
-    	    long read_in = fread(buffer, 1, DEFAULT_BUFFER_SIZE, stdin);
-	    data_buffer.len = read_in;
-
-	    open_obj.len = read_in;
-	    data_buffer.len = open_obj.len;
-
-            status = rcDataObjWrite(_cn, _open_obj, _data_buffer);
-            if (status >= 0) {
-    	        fprintf(stderr, "Wrote [%d] bytes after some retries\n", status);
-                return status;
-            }
-    	    fprintf(stderr, "Write failed on retry with status [%d]\n", status);
-        }
-
-    return status;
-}
-
-
-int rcDataObjClose_with_reconnect(
-    rcComm_t* _cn,
-    openedDataObjInp_t* _open_obj) {
-    //openedDataObjInp_t* _open_obj,
-    //int (*_data_obj_close)(rcComm_t**, openedDataObjInp_t*)) {
-    int status = rcDataObjClose(_cn, _open_obj);
-    if (status >= 0) {
-        return status;
-    }
-
-        while (SYS_HEADER_READ_LEN_ERR == status) {
-            rErrMsg_t err_msg;
-            rodsEnv irods_env;
-            // lets get the irods environment
-            if ((status = getRodsEnv(&irods_env)) < 0) {
-    	        error_and_exit(_cn, "Error: getRodsEnv failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
-            }
-            // make the irods connections
-            _cn = rcConnect(irods_env.rodsHost, irods_env.rodsPort,
-    	    	             irods_env.rodsUserName, irods_env.rodsZone,
-		             reconnect, &err_msg);
-        
-            if (!_cn) {
-    	        print_irods_error("Error: rcConnect failed:", &err_msg);
-	        exit(EXIT_FAILURE);
-            }
-
-            #if IRODS_VERSION_INTEGER && IRODS_VERSION_INTEGER >= 4001008
-	        status = clientLogin(_cn, "", "");
-            #else
-	        status = clientLogin(_cn);
-            #endif
-
-            if (status < 0) {
-    	        error_and_exit(_cn, "Error: clientLogin failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
-            }
-            status = rcDataObjClose(_cn, _open_obj);
-            if (status >= 0) {
-                return status;
-                }
-        }
-
-    return status;
-}
-*/
 
 int main (int argc, char **argv) {
     rcComm_t           *conn = NULL;
@@ -567,6 +463,7 @@ int main (int argc, char **argv) {
 	                fprintf(stderr, "read: trying again from the top...\n");
                         continue;
                     }
+	            fprintf(stderr, "read: reconnect failed...\n");
                 }
     		error_and_exit(conn, "Error:  rcDataObjRead failed with status %ld:%s\n", read_in, get_irods_error_name(read_in, verbose));
 	    }
@@ -583,18 +480,42 @@ int main (int argc, char **argv) {
 	    open_obj.len = read_in;
 	    data_buffer.len = open_obj.len;
 
+            fileLseekOut_t *dataObjLseekOut = NULL;
+            openedDataObjInp_t dataObjLseekInp;
+            memset( &dataObjLseekInp, 0, sizeof( dataObjLseekInp ) );
+            dataObjLseekInp.whence = SEEK_SET;
+            dataObjLseekInp.l1descInx = open_fd;
+            dataObjLseekInp.offset = total_written;
+            status = rcDataObjLseek(conn, &dataObjLseekInp, &dataObjLseekOut);
+            if (status < 0) {
+	        error_and_exit(conn, "lseek: failed with code %lld...\n", status);
+            }
+            if (dataObjLseekOut) {
+                free(dataObjLseekOut);
+            }
+
+	    fprintf(stderr, "write: attempting write...\n");
 	    if ((written_out = rcDataObjWrite(conn, &open_obj, &data_buffer)) < 0) {
+	        fprintf(stderr, "write: written_out < 0, %ld...\n", written_out);
                 if (SYS_HEADER_READ_LEN_ERR == written_out ||
                     SYS_SOCK_READ_ERR == written_out) {
 	            fprintf(stderr, "write: reconnecting to server...\n");
                     reconnect_to_server(conn);
                     if (conn) {
+	                fprintf(stderr, "write: opening again...\n");
+	                if ((open_fd = rcDataObjOpen(conn, &data_obj)) < 0) {
+    	                    error_and_exit(conn, "Error: rcDataObjOpen failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
+	                }
+	                open_obj.l1descInx = open_fd;
+
 	                fprintf(stderr, "write: trying again from the top...\n");
                         continue;
                     }
+	            fprintf(stderr, "write: reconnect failed...\n");
                 }
     		error_and_exit(conn, "Error:  rcDataObjWrite failed with status %ld\n", written_out, get_irods_error_name(written_out, verbose));
 	    }
+	    fprintf(stderr, "write: written_out == %ld...\n", written_out);
 	} else {
 	    written_out = fwrite(buffer, 1, read_in, stdout);
 	}
@@ -626,6 +547,7 @@ int main (int argc, char **argv) {
 	                fprintf(stderr, "close: attempting another close...\n");
                         status = rcDataObjClose(conn, &open_obj);
                     }
+	            fprintf(stderr, "close: reconnect failed...\n");
                 }
                 if (status < 0) {
     	            error_and_exit(conn, "Error: rcDataObjClose failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
