@@ -263,6 +263,7 @@ int create_data_object(rcComm_t* conn, const char* obj_name, rodsEnv* irods_env,
         choose_server(&conn, new_host, irods_env, verbose);
         free(new_host);
     }
+    fprintf(stderr, "connected to server:%s\n", conn->host);
 
     if (force_write) {
         addKeyVal(&data_obj.condInput, FORCE_FLAG_KW, "");
@@ -431,8 +432,9 @@ int main (int argc, char **argv) {
 */
 
     // set up the data object
-    dataObjInp_t data_obj;
     char* new_host = NULL;
+
+    dataObjInp_t data_obj;
     memset(&data_obj, 0, sizeof(data_obj));
     strncpy(data_obj.objPath, obj_name, MAX_NAME_LEN);
 
@@ -453,9 +455,12 @@ int main (int argc, char **argv) {
             choose_server(&conn, new_host, &irods_env, verbose);
             free(new_host);
         }
+        fprintf(stderr, "connected to server:%s\n", conn->host);
+
         if (force_write) {
             addKeyVal(&data_obj.condInput, FORCE_FLAG_KW, "");
         }
+
         if ((open_fd = rcDataObjCreate(conn, &data_obj)) < 0) {
             error_and_exit(conn, "Error: rcDataObjCreate failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
         }
