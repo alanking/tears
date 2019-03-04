@@ -60,7 +60,7 @@ char *get_irods_error_name(int status, int verb) {
     name = rodsErrorName(status, &subname);
 
     if (verb) {
-    	fprintf(stderr, "Extra error message: %s\n", subname);
+        fprintf(stderr, "Extra error message: %s\n", subname);
     }
 
     return name;
@@ -72,7 +72,7 @@ void print_irods_error(char *msg, rErrMsg_t *err) {
     char *name    = rodsErrorName(err->status, &subname);
 
     fprintf(stderr, "%s name %s (%s) (%d) %s\n", msg, name, subname,
-    	    	err->status, err->msg);
+                err->status, err->msg);
 }
 
 
@@ -84,7 +84,7 @@ void error_and_exit(rcComm_t *c, const char *msg, ...) {
     va_end(argp);
 
     if (c) {
-    	rcDisconnect(c);
+        rcDisconnect(c);
     }
 
     exit(EXIT_FAILURE);
@@ -98,9 +98,9 @@ int irods_uri_check(char *uri, rodsEnv *env, int verb) {
     char *port = NULL;
 
     if (strncmp(uri, "irods:", 6) != 0) {
-    	if (verb) {
-	    fprintf(stderr, "No iRODS URI, using default settings.\n");
-	}
+        if (verb) {
+        fprintf(stderr, "No iRODS URI, using default settings.\n");
+    }
 
         return 0;;
     }
@@ -110,13 +110,13 @@ int irods_uri_check(char *uri, rodsEnv *env, int verb) {
     char *port_end;
 
     if (auth) {
-    	tag_start = auth + strlen("//");
-    	port_end  = strchr(tag_start, '/');
+        tag_start = auth + strlen("//");
+        port_end  = strchr(tag_start, '/');
     }
 
     if (!auth || !port_end) {
-    	fprintf(stderr, "URI format needed: irods://[irodsUserName%%23irodsZone@][irodsHost][:irodsPort]/collection_path/data_object\n");
-	return -1;
+        fprintf(stderr, "URI format needed: irods://[irodsUserName%%23irodsZone@][irodsHost][:irodsPort]/collection_path/data_object\n");
+    return -1;
     }
 
     // look for the user name
@@ -124,15 +124,15 @@ int irods_uri_check(char *uri, rodsEnv *env, int verb) {
 
     if (tag_end) {
         user = strndup(tag_start, tag_end - tag_start);
-	tag_start = tag_end + strlen("%23");
+    tag_start = tag_end + strlen("%23");
     }
 
     // look for zone
     tag_end = strchr(uri, '@');
 
     if (tag_end) {
-	zone = strndup(tag_start, tag_end - tag_start);
-	tag_start = tag_end + 1;
+    zone = strndup(tag_start, tag_end - tag_start);
+    tag_start = tag_end + 1;
     }
 
     // now the host and port
@@ -140,46 +140,46 @@ int irods_uri_check(char *uri, rodsEnv *env, int verb) {
     char *host_tag = tag_end + 1;
 
     if (tag_end) {
-	host = strndup(tag_start, tag_end - tag_start);
-	port = strndup(host_tag, port_end - host_tag);
+    host = strndup(tag_start, tag_end - tag_start);
+    port = strndup(host_tag, port_end - host_tag);
     } else {
-	host = strndup(tag_start, port_end - tag_start);
+    host = strndup(tag_start, port_end - tag_start);
     }
 
     if (!host) {
         fprintf(stderr, "Error: invalid uri (no host): %s\n", uri);
-	return -1;
+    return -1;
     }
 
     // copy of the changed values
     if (user) {
-    	strncpy(env->rodsUserName, user, NAME_LEN);
+        strncpy(env->rodsUserName, user, NAME_LEN);
     }
 
     if (zone) {
-    	strncpy(env->rodsZone, zone, NAME_LEN);
+        strncpy(env->rodsZone, zone, NAME_LEN);
     }
 
     if (host) {
-    	strncpy(env->rodsHost, host, NAME_LEN);
+        strncpy(env->rodsHost, host, NAME_LEN);
     }
 
     if (port) {
-    	env->rodsPort = atoi(port);
+        env->rodsPort = atoi(port);
     }
 
     // rewrite so just the file is left
     char *file = strdup(port_end);
 
     if (file) {
-    	strcpy(uri, file);
+        strcpy(uri, file);
     } else {
-    	fprintf(stderr, "Error: unable to extract file name %s\n", uri);
-	return -1;
+        fprintf(stderr, "Error: unable to extract file name %s\n", uri);
+    return -1;
     }
 
     if (verb) {
-    	fprintf(stderr, "File name is %s\n", uri);
+        fprintf(stderr, "File name is %s\n", uri);
     }
 
     free(file);
@@ -193,39 +193,123 @@ int irods_uri_check(char *uri, rodsEnv *env, int verb) {
 }
 
 
-void choose_server(rcComm_t **cn, char *host, rodsEnv *env, int verb) {
+int connect_to_server(rcComm_t **conn, char *host, rodsEnv *irods_env, int verbose) {
+    rErrMsg_t err_msg;
+    int status = 0;
+    rcComm_t* new_conn = NULL;
+    if (!host) {
+        host = irods_env->rodsHost;
+    }
+    // make the irods connections
+    new_conn = rcConnect(host, irods_env->rodsPort,
+                     irods_env->rodsUserName, irods_env->rodsZone,
+                     0, &err_msg);
 
+    if (!new_conn) {
+        return err_msg.status;
+    }
+
+    #if IRODS_VERSION_INTEGER && IRODS_VERSION_INTEGER >= 4001008
+        status = clientLogin(new_conn, "", "");
+    #else
+        status = clientLogin(new_conn);
+    #endif
+
+    if (status < 0) {
+        rcDisconnect(new_conn);
+        error_and_exit(new_conn, "Error: clientLogin failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
+    } else {
+        rcDisconnect(*conn);
+        *conn = new_conn;
+    }
+    return 0;
+}
+
+
+void choose_server(rcComm_t **cn, char *host, rodsEnv *env, int verb) {
     if (verb) {
         fprintf(stderr, "Chosen server is: %s\n", host);
     }
 
     if (host && strcmp(host, THIS_ADDRESS)) {
-        int       stat;
-        rErrMsg_t err_msg;
-        rcComm_t  *new_cn = NULL;
-
-        new_cn = rcConnect(host, env->rodsPort, env->rodsUserName,
-                           env->rodsZone, 0, &err_msg);
-
-        if (!new_cn) {
-            fprintf(stderr, "Error: rcReconnect failed with status %d.  Continuing with original server.\n", err_msg.status);
-            return;
-        }
-
-        #if IRODS_VERSION_INTEGER && IRODS_VERSION_INTEGER >= 4001008
-            stat = clientLogin(new_cn, "", "");
-        #else
-            stat = clientLogin(new_cn);
-        #endif
-
-        if (stat < 0) {
-            rcDisconnect(new_cn);
-            error_and_exit(*cn, "Error: clientLogin failed with status %d:%s\n", stat, get_irods_error_name(stat, verb));
-        } else {
-            rcDisconnect(*cn);
-            *cn = new_cn;
+        int status = connect_to_server(cn, host, env, verb);
+        if (status) {
+            fprintf(stderr, "Error: rcReconnect failed with status %d.  Continuing with original server.\n", status);
         }
     }
+}
+
+
+int create_data_object(rcComm_t* conn, const char* obj_name, rodsEnv* irods_env, int server_set, int force_write, int verbose) {
+    int open_fd = 0;
+    char* new_host = NULL;
+
+    // set up the data object
+    dataObjInp_t data_obj;
+    memset(&data_obj, 0, sizeof(data_obj));
+    strncpy(data_obj.objPath, obj_name, MAX_NAME_LEN);
+    data_obj.openFlags = O_WRONLY;
+    data_obj.dataSize = 0;
+
+    // talk to server
+    if (!server_set) {
+        int status = 0;
+        if ((status = rcGetHostForPut(conn, &data_obj, &new_host)) < 0) {
+            error_and_exit(conn, "Error: rcGetHostForPut failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
+        }
+        choose_server(&conn, new_host, irods_env, verbose);
+        free(new_host);
+    }
+
+    if (force_write) {
+        addKeyVal(&data_obj.condInput, FORCE_FLAG_KW, "");
+    }
+
+    if ((open_fd = rcDataObjCreate(conn, &data_obj)) < 0) {
+        error_and_exit(conn, "Error: rcDataObjCreate failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
+    }
+    return open_fd;
+}
+
+int open_data_object(rcComm_t* conn, const char* obj_name, rodsEnv* irods_env, unsigned long offset_in_bytes, int server_set, int force_write, int verbose) {
+    int open_fd = 0;
+    char* new_host = NULL;
+
+    // set up the data object
+    dataObjInp_t data_obj;
+    memset(&data_obj, 0, sizeof(data_obj));
+    strncpy(data_obj.objPath, obj_name, MAX_NAME_LEN);
+    data_obj.openFlags = O_RDONLY;
+    data_obj.dataSize = 0;
+
+    if (!server_set) {
+        int status = 0;
+        if ((status = rcGetHostForGet(conn, &data_obj, &new_host)) < 0) {
+            error_and_exit(conn, "Error: rcGetHostForGet failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
+        }
+        choose_server(&conn, new_host, irods_env, verbose);
+        free(new_host);
+    }
+
+    if ((open_fd = rcDataObjOpen(conn, &data_obj)) < 0) {
+        error_and_exit(conn, "Error: rcDataObjOpen failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
+    }
+
+    if (offset_in_bytes) {
+        openedDataObjInp_t dataObjLseekInp;
+        fileLseekOut_t *dataObjLseekOut = NULL;
+        memset(&dataObjLseekInp, 0, sizeof(dataObjLseekInp));
+        dataObjLseekInp.whence = SEEK_SET;
+        dataObjLseekInp.l1descInx = open_fd;
+        dataObjLseekInp.offset = offset_in_bytes;
+        if (rcDataObjLseek(conn, &dataObjLseekInp, &dataObjLseekOut) < 0) {
+            error_and_exit(conn, "Error: rcDataObjLseek failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
+        } else if (dataObjLseekOut) {
+            free(dataObjLseekOut);
+        }
+    }
+
+    return open_fd;
 }
 
 
@@ -233,10 +317,8 @@ int main (int argc, char **argv) {
     rcComm_t           *conn = NULL;
     rodsEnv            irods_env;
     rErrMsg_t          err_msg;
-    dataObjInp_t       data_obj;
     openedDataObjInp_t open_obj;
     int                open_fd;
-    char    	       *new_host = NULL;
 
     int status;
     char *obj_name = NULL;
@@ -251,9 +333,9 @@ int main (int argc, char **argv) {
     int force_write = 0;
 
     while ((opt = getopt(argc, argv, "b:vhrdwf")) != -1) {
-    	switch (opt) {
-	    case 'b':
-	    	buf_size = atoi(optarg);
+        switch (opt) {
+        case 'b':
+            buf_size = atoi(optarg);
 
             if (buf_size <= 0) {
                 error_and_exit(conn, "Error: buffer size must be greater than 0.\n");
@@ -261,140 +343,86 @@ int main (int argc, char **argv) {
 
             break;
 
-	    case 'v':
-	    	verbose = 1;
+        case 'v':
+            verbose = 1;
             break;
 
-	    case 'r':
-	    	write_to_irods = 0;
+        case 'r':
+            write_to_irods = 0;
             break;
 
-	    case 'w':
-	    	write_to_irods = 1;
+        case 'w':
+            write_to_irods = 1;
             break;
 
-	    case 'd':
-	    	server_set = 1;
+        case 'd':
+            server_set = 1;
             break;
 
         case 'f':
             force_write = 1;
             break;
 
-	    case 'h':
-	    	usage_and_exit(argv[0], EXIT_SUCCESS);
+        case 'h':
+            usage_and_exit(argv[0], EXIT_SUCCESS);
             break;
 
-	    default:
-	    	usage_and_exit(argv[0], EXIT_FAILURE);
+        default:
+            usage_and_exit(argv[0], EXIT_FAILURE);
             break;
         }
     }
 
     if (optind >= argc) {
-    	fprintf(stderr, "Error: Missing iRODS file.\n");
+        fprintf(stderr, "Error: Missing iRODS file.\n");
         usage_and_exit(argv[0], EXIT_FAILURE);
     }
 
     obj_name = argv[optind];
 
     if ((buffer = malloc(buf_size)) == NULL) {
-    	error_and_exit(conn, "Error: unable to set buffer to size %ld\n", buf_size);
+        error_and_exit(conn, "Error: unable to set buffer to size %ld\n", buf_size);
     }
 
     // set the client name so iRODS knows what program is connecting to it
     sprintf(prog_name, "%s:%s", PACKAGE_NAME, PACKAGE_VERSION);
 
     if (verbose) {
-    	fprintf(stderr, "Setting client name to: %s\n", prog_name);
+        fprintf(stderr, "Setting client name to: %s\n", prog_name);
     }
 
     setenv(SP_OPTION, prog_name, 1);
 
     // lets get the irods environment
     if ((status = getRodsEnv(&irods_env)) < 0) {
-    	error_and_exit(conn, "Error: getRodsEnv failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
+        error_and_exit(conn, "Error: getRodsEnv failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
     }
 
     if ((status = irods_uri_check(obj_name, &irods_env, verbose)) < 0) {
-    	error_and_exit(conn, "Error: invalid uri: %s\n", obj_name);
+        error_and_exit(conn, "Error: invalid uri: %s\n", obj_name);
     } else if (status > 0) {
-    	server_set = 1;
+        server_set = 1;
     }
 
     if (verbose) {
-    	fprintf(stderr, "host %s\nzone %s\nuser %s\nport %d\n",
-	    irods_env.rodsHost, irods_env.rodsZone,
-	    irods_env.rodsUserName, irods_env.rodsPort);
+        fprintf(stderr, "host %s\nzone %s\nuser %s\nport %d\n",
+        irods_env.rodsHost, irods_env.rodsZone,
+        irods_env.rodsUserName, irods_env.rodsPort);
     }
 
     #if IRODS_VERSION_INTEGER && IRODS_VERSION_INTEGER >= 4001008
         init_client_api_table();
     #endif
 
-    // make the irods connections
-    conn = rcConnect(irods_env.rodsHost, irods_env.rodsPort,
-    	    	     irods_env.rodsUserName, irods_env.rodsZone,
-                     0, &err_msg);
-
-    if (!conn) {
-    	print_irods_error("Error: rcConnect failed:", &err_msg);
-        exit(EXIT_FAILURE);
+    status = connect_to_server(&conn, NULL, &irods_env, verbose);
+    if (status) {
+        error_and_exit(conn, "Error: failed connecting to server with status %d\n", status);
     }
-
-    #if IRODS_VERSION_INTEGER && IRODS_VERSION_INTEGER >= 4001008
-        status = clientLogin(conn, "", "");
-    #else
-        status = clientLogin(conn);
-    #endif
-
-    if (status < 0) {
-    	error_and_exit(conn, "Error: clientLogin failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
-    }
-
-    // set up the data object
-    memset(&data_obj, 0, sizeof(data_obj));
-    strncpy(data_obj.objPath, obj_name, MAX_NAME_LEN);
 
     if (write_to_irods) {
-    	data_obj.openFlags = O_WRONLY;
+        open_fd = create_data_object(conn, obj_name, &irods_env, server_set, force_write, verbose);
     } else {
-    	data_obj.openFlags = O_RDONLY;
-    }
-
-    data_obj.dataSize = 0;
-
-    // talk to server
-    if (write_to_irods) {
-        if (!server_set) {
-            if ((status = rcGetHostForPut(conn, &data_obj, &new_host)) < 0) {
-                error_and_exit(conn, "Error: rcGetHostForPut failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
-            }
-
-            choose_server(&conn, new_host, &irods_env, verbose);
-            free(new_host);
-        }
-
-        if (force_write) {
-            addKeyVal(&data_obj.condInput, FORCE_FLAG_KW, "");
-        }
-
-        if ((open_fd = rcDataObjCreate(conn, &data_obj)) < 0) {
-            error_and_exit(conn, "Error: rcDataObjCreate failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
-        }
-    } else {
-    	if (!server_set) {
-            if ((status = rcGetHostForGet(conn, &data_obj, &new_host)) < 0) {
-                error_and_exit(conn, "Error: rcGetHostForGet failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
-            }
-
-        choose_server(&conn, new_host, &irods_env, verbose);
-	    free(new_host);
-        }
-
-        if ((open_fd = rcDataObjOpen(conn, &data_obj)) < 0) {
-            error_and_exit(conn, "Error: rcDataObjOpen failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
-        }
+        open_fd = open_data_object(conn, obj_name, &irods_env, total_written, server_set, force_write, verbose);
     }
 
     // the read/write loop
@@ -410,7 +438,7 @@ int main (int argc, char **argv) {
 
         // time to read something
         if (write_to_irods) {
-            read_in 	    = fread(buffer, 1, buf_size, stdin);
+            read_in         = fread(buffer, 1, buf_size, stdin);
             open_obj.len    = read_in;
             data_buffer.len = open_obj.len;
         } else {
@@ -418,6 +446,13 @@ int main (int argc, char **argv) {
             data_buffer.len = open_obj.len;
 
             if ((read_in = rcDataObjRead(conn, &open_obj, &data_buffer)) < 0) {
+                // Agent fell over - reconnect, seek to total written and try again
+                if (SYS_HEADER_READ_LEN_ERR == written_out ||
+                    SYS_SOCK_READ_ERR == written_out) {
+                    connect_to_server(&conn, NULL, &irods_env, verbose);
+                    open_fd = open_data_object(conn, obj_name, &irods_env, total_written, server_set, force_write, verbose);
+                    continue;
+                }
                 error_and_exit(conn, "Error:  rcDataObjRead failed with status %ld:%s\n", read_in, get_irods_error_name(read_in, verbose));
             }
         }
@@ -434,6 +469,13 @@ int main (int argc, char **argv) {
             data_buffer.len = open_obj.len;
 
             if ((written_out = rcDataObjWrite(conn, &open_obj, &data_buffer)) < 0) {
+                // Agent fell over - reconnect, seek to total written and try again
+                if (SYS_HEADER_READ_LEN_ERR == written_out ||
+                    SYS_SOCK_READ_ERR == written_out) {
+                    connect_to_server(&conn, NULL, &irods_env, verbose);
+                    open_fd = open_data_object(conn, obj_name, &irods_env, total_written, server_set, force_write, verbose);
+                    continue;
+                }
                 error_and_exit(conn, "Error:  rcDataObjWrite failed with status %ld\n", written_out, get_irods_error_name(written_out, verbose));
             }
         } else {
@@ -452,11 +494,11 @@ int main (int argc, char **argv) {
     };
 
     if (verbose) {
-    	fprintf(stderr, "Total bytes written %ld\n", total_written);
+        fprintf(stderr, "Total bytes written %ld\n", total_written);
     }
 
     if ((status = rcDataObjClose(conn, &open_obj)) < 0) {
-    	error_and_exit(conn, "Error: rcDataObjClose failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
+        error_and_exit(conn, "Error: rcDataObjClose failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
     }
 
     rcDisconnect(conn);
