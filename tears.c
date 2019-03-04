@@ -497,10 +497,11 @@ int main (int argc, char **argv) {
 
             if ((read_in = rcDataObjRead(conn, &open_obj, &data_buffer)) < 0) {
                 // Agent fell over - reconnect, seek to total written and try again
-                if (SYS_HEADER_READ_LEN_ERR == written_out ||
-                    SYS_SOCK_READ_ERR == written_out) {
+                if (SYS_HEADER_READ_LEN_ERR == read_in ||
+                    (read_in >= SYS_SOCK_READ_ERR && read_in <= SYS_SOCK_READ_ERR + 999)) {
                     connect_to_server(&conn, irods_env.rodsHost, &irods_env, verbose);
                     open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, write_to_irods, server_set, force_write, verbose);
+                    fseek(stdout, total_written, SEEK_SET);
                     continue;
                 }
                 error_and_exit(conn, "Error:  rcDataObjRead failed with status %ld:%s\n", read_in, get_irods_error_name(read_in, verbose));
