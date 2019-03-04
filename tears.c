@@ -458,7 +458,7 @@ int main (int argc, char **argv) {
     if (write_to_irods) {
         open_fd = create_data_object(&conn, obj_name, &irods_env, server_set, force_write, verbose);
     } else {
-        open_fd = open_data_object(&conn, obj_name, &irods_env, write_to_irods, total_written, server_set, force_write, verbose);
+        open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, write_to_irods, server_set, force_write, verbose);
     }
 
     if (verbose) {
@@ -494,7 +494,7 @@ int main (int argc, char **argv) {
                     SYS_SOCK_READ_ERR == written_out) {
                     connect_to_server(&conn, irods_env.rodsHost, &irods_env, verbose);
                     //close_data_object(&conn, &open_obj, verbose);
-                    open_fd = open_data_object(&conn, obj_name, &irods_env, write_to_irods, total_written, server_set, force_write, verbose);
+                    open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, write_to_irods, server_set, force_write, verbose);
                     continue;
                 }
                 error_and_exit(conn, "Error:  rcDataObjRead failed with status %ld:%s\n", read_in, get_irods_error_name(read_in, verbose));
@@ -538,7 +538,8 @@ int main (int argc, char **argv) {
                     if (verbose) {
                         fprintf(stderr, "...and re-opening\n");
                     }
-                    open_fd = open_data_object(&conn, obj_name, &irods_env, write_to_irods, total_written, server_set, force_write, verbose);
+                    open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, write_to_irods, server_set, force_write, verbose);
+                    sleep(10);
                     if (verbose) {
                         fprintf(stderr, "opened open_fd %d and starting over!\n", open_fd);
                     }
