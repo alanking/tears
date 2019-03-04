@@ -197,9 +197,6 @@ int connect_to_server(rcComm_t **conn, char *host, rodsEnv *irods_env, int verbo
     rErrMsg_t err_msg;
     int status = 0;
     rcComm_t* new_conn = NULL;
-    if (!host) {
-        host = irods_env->rodsHost;
-    }
     // make the irods connections
     new_conn = rcConnect(host, irods_env->rodsPort,
                      irods_env->rodsUserName, irods_env->rodsZone,
@@ -243,7 +240,7 @@ void choose_server(rcComm_t **cn, char *host, rodsEnv *env, int verb) {
 }
 
 
-int create_data_object(rcComm_t* conn, const char* obj_name, rodsEnv* irods_env, int server_set, int force_write, int verbose) {
+int create_data_object(rcComm_t** conn, const char* obj_name, rodsEnv* irods_env, int server_set, int force_write, int verbose) {
     int open_fd = 0;
     char* new_host = NULL;
 
@@ -257,25 +254,25 @@ int create_data_object(rcComm_t* conn, const char* obj_name, rodsEnv* irods_env,
     // talk to server
     if (!server_set) {
         int status = 0;
-        if ((status = rcGetHostForPut(conn, &data_obj, &new_host)) < 0) {
-            error_and_exit(conn, "Error: rcGetHostForPut failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
+        if ((status = rcGetHostForPut(*conn, &data_obj, &new_host)) < 0) {
+            error_and_exit(*conn, "Error: rcGetHostForPut failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
         }
-        choose_server(&conn, new_host, irods_env, verbose);
+        choose_server(conn, new_host, irods_env, verbose);
         free(new_host);
     }
-    fprintf(stderr, "connected to server:%s\n", conn->host);
+    fprintf(stderr, "connected to server:%s\n", (*conn)->host);
 
     if (force_write) {
         addKeyVal(&data_obj.condInput, FORCE_FLAG_KW, "");
     }
 
-    if ((open_fd = rcDataObjCreate(conn, &data_obj)) < 0) {
-        error_and_exit(conn, "Error: rcDataObjCreate failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
+    if ((open_fd = rcDataObjCreate(*conn, &data_obj)) < 0) {
+        error_and_exit(*conn, "Error: rcDataObjCreate failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
     }
     return open_fd;
 }
 
-int open_data_object(rcComm_t* conn, const char* obj_name, rodsEnv* irods_env, unsigned long offset_in_bytes, int server_set, int force_write, int verbose) {
+int open_data_object(rcComm_t** conn, const char* obj_name, rodsEnv* irods_env, unsigned long offset_in_bytes, int server_set, int force_write, int verbose) {
     int open_fd = 0;
     char* new_host = NULL;
 
@@ -288,15 +285,15 @@ int open_data_object(rcComm_t* conn, const char* obj_name, rodsEnv* irods_env, u
 
     if (!server_set) {
         int status = 0;
-        if ((status = rcGetHostForGet(conn, &data_obj, &new_host)) < 0) {
-            error_and_exit(conn, "Error: rcGetHostForGet failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
+        if ((status = rcGetHostForGet(*conn, &data_obj, &new_host)) < 0) {
+            error_and_exit(*conn, "Error: rcGetHostForGet failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
         }
-        choose_server(&conn, new_host, irods_env, verbose);
+        choose_server(conn, new_host, irods_env, verbose);
         free(new_host);
     }
 
-    if ((open_fd = rcDataObjOpen(conn, &data_obj)) < 0) {
-        error_and_exit(conn, "Error: rcDataObjOpen failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
+    if ((open_fd = rcDataObjOpen(*conn, &data_obj)) < 0) {
+        error_and_exit(*conn, "Error: rcDataObjOpen failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
     }
 
     if (offset_in_bytes) {
@@ -306,8 +303,8 @@ int open_data_object(rcComm_t* conn, const char* obj_name, rodsEnv* irods_env, u
         dataObjLseekInp.whence = SEEK_SET;
         dataObjLseekInp.l1descInx = open_fd;
         dataObjLseekInp.offset = offset_in_bytes;
-        if (rcDataObjLseek(conn, &dataObjLseekInp, &dataObjLseekOut) < 0) {
-            error_and_exit(conn, "Error: rcDataObjLseek failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
+        if (rcDataObjLseek(*conn, &dataObjLseekInp, &dataObjLseekOut) < 0) {
+            error_and_exit(*conn, "Error: rcDataObjLseek failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
         } else if (dataObjLseekOut) {
             free(dataObjLseekOut);
         }
@@ -418,19 +415,18 @@ int main (int argc, char **argv) {
         init_client_api_table();
     #endif
 
-    status = connect_to_server(&conn, NULL, &irods_env, verbose);
+    status = connect_to_server(&conn, irods_env.rodsHost, &irods_env, verbose);
     if (status < 0) {
         error_and_exit(conn, "Error: failed connecting to server with status %d\n", status);
     }
 
-/*
     if (write_to_irods) {
-        open_fd = create_data_object(conn, obj_name, &irods_env, server_set, force_write, verbose);
+        open_fd = create_data_object(&conn, obj_name, &irods_env, server_set, force_write, verbose);
     } else {
-        open_fd = open_data_object(conn, obj_name, &irods_env, total_written, server_set, force_write, verbose);
+        open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, server_set, force_write, verbose);
     }
-*/
 
+/*
     // set up the data object
     char* new_host = NULL;
 
@@ -476,6 +472,7 @@ int main (int argc, char **argv) {
                 error_and_exit(conn, "Error: rcDataObjOpen failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
         }
     }
+*/
 
     if (verbose) {
         fprintf(stderr, "open_fd == %d\n", open_fd);
@@ -507,7 +504,7 @@ int main (int argc, char **argv) {
                 if (SYS_HEADER_READ_LEN_ERR == written_out ||
                     SYS_SOCK_READ_ERR == written_out) {
                     connect_to_server(&conn, NULL, &irods_env, verbose);
-                    open_fd = open_data_object(conn, obj_name, &irods_env, total_written, server_set, force_write, verbose);
+                    open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, server_set, force_write, verbose);
                     continue;
                 }
                 error_and_exit(conn, "Error:  rcDataObjRead failed with status %ld:%s\n", read_in, get_irods_error_name(read_in, verbose));
@@ -539,7 +536,7 @@ int main (int argc, char **argv) {
                     if (verbose) {
                         fprintf(stderr, "...and re-opening\n");
                     }
-                    open_fd = open_data_object(conn, obj_name, &irods_env, total_written, server_set, force_write, verbose);
+                    open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, server_set, force_write, verbose);
                     continue;
                 }
                 error_and_exit(conn, "Error:  rcDataObjWrite failed with status %ld\n", written_out, get_irods_error_name(written_out, verbose));
