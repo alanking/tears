@@ -219,6 +219,9 @@ int connect_to_server(rcComm_t **conn, char *host, rodsEnv *irods_env, int verbo
         rcDisconnect(new_conn);
         error_and_exit(new_conn, "Error: clientLogin failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
     } else {
+        if (verbose) {
+            fprintf(stderr, "Disconnecting from current conn and using new conn\n");
+        }
         rcDisconnect(*conn);
         *conn = new_conn;
     }
@@ -415,11 +418,8 @@ int main (int argc, char **argv) {
     #endif
 
     status = connect_to_server(&conn, NULL, &irods_env, verbose);
-    if (status) {
+    if (status < 0) {
         error_and_exit(conn, "Error: failed connecting to server with status %d\n", status);
-    }
-    if (!conn) {
-        error_and_exit(conn, "Error: conn handle is NULL\n");
     }
 
     if (write_to_irods) {
@@ -427,6 +427,11 @@ int main (int argc, char **argv) {
     } else {
         open_fd = open_data_object(conn, obj_name, &irods_env, total_written, server_set, force_write, verbose);
     }
+
+    if (verbose) {
+        fprintf(stderr, "open_fd == %d\n", open_fd);
+    }
+
 
     // the read/write loop
     while (1) {
@@ -472,13 +477,19 @@ int main (int argc, char **argv) {
             data_buffer.len = open_obj.len;
 
             if (verbose) {
-                fprintf(stderr, "Preparing to write to %s\n", open_obj.objPath);
+                fprintf(stderr, "Preparing to write... read_in:[%ld],status:[%d]\n", read_in, conn->status);
             }
             if ((written_out = rcDataObjWrite(conn, &open_obj, &data_buffer)) < 0) {
                 // Agent fell over - reconnect, seek to total written and try again
                 if (SYS_HEADER_READ_LEN_ERR == written_out ||
                     SYS_SOCK_READ_ERR == written_out) {
+                    if (verbose) {
+                        fprintf(stderr, "Someting bad happened... reconnecting\n");
+                    }
                     connect_to_server(&conn, NULL, &irods_env, verbose);
+                    if (verbose) {
+                        fprintf(stderr, "...and re-opening\n");
+                    }
                     open_fd = open_data_object(conn, obj_name, &irods_env, total_written, server_set, force_write, verbose);
                     continue;
                 }
