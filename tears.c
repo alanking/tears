@@ -300,8 +300,14 @@ int open_data_object(rcComm_t** conn, const char* obj_name, rodsEnv* irods_env, 
 
     if (!server_set) {
         int status = 0;
-        if ((status = rcGetHostForGet(*conn, &data_obj, &new_host)) < 0) {
-            error_and_exit(*conn, "Error: rcGetHostForGet failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
+        if (write_to_irods) {
+             if ((status = rcGetHostForPut(*conn, &data_obj, &new_host)) < 0) {
+                 error_and_exit(*conn, "Error: rcGetHostForPut failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
+             }
+        } else {
+             if ((status = rcGetHostForGet(*conn, &data_obj, &new_host)) < 0) {
+                 error_and_exit(*conn, "Error: rcGetHostForGet failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
+             }
         }
         choose_server(conn, new_host, irods_env, verbose);
         free(new_host);
@@ -325,6 +331,9 @@ int open_data_object(rcComm_t** conn, const char* obj_name, rodsEnv* irods_env, 
         dataObjLseekInp.whence = SEEK_SET;
         dataObjLseekInp.l1descInx = open_fd;
         dataObjLseekInp.offset = offset_in_bytes;
+        //dataObjLseekInp.whence = SEEK_END;
+        //dataObjLseekInp.l1descInx = open_fd;
+        //dataObjLseekInp.offset = 0;
         if (verbose) {
             fprintf(stderr, "seeking to %lu\n", offset_in_bytes);
         }
@@ -472,8 +481,6 @@ int main (int argc, char **argv) {
         long read_in;
         long written_out;
 
-        //open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, server_set, force_write, verbose);
-
         // set up common data elements
         memset(&open_obj, 0, sizeof(open_obj));
         open_obj.l1descInx = open_fd;
@@ -493,7 +500,6 @@ int main (int argc, char **argv) {
                 if (SYS_HEADER_READ_LEN_ERR == written_out ||
                     SYS_SOCK_READ_ERR == written_out) {
                     connect_to_server(&conn, irods_env.rodsHost, &irods_env, verbose);
-                    //close_data_object(&conn, &open_obj, verbose);
                     open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, write_to_irods, server_set, force_write, verbose);
                     continue;
                 }
@@ -527,22 +533,10 @@ int main (int argc, char **argv) {
                 // Agent fell over - reconnect, seek to total written and try again
                 if (SYS_HEADER_READ_LEN_ERR == written_out ||
                     (written_out >= SYS_SOCK_READ_ERR && written_out <= SYS_SOCK_READ_ERR + 999)) {
-                    if (verbose) {
-                        fprintf(stderr, "Someting bad happened... reconnecting\n");
-                    }
                     connect_to_server(&conn, irods_env.rodsHost, &irods_env, verbose);
-                    //if (verbose) {
-                        //fprintf(stderr, "...closing data object...\n");
-                    //}
-                    //close_data_object(&conn, &open_obj, verbose);
-                    if (verbose) {
-                        fprintf(stderr, "...and re-opening\n");
-                    }
                     open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, write_to_irods, server_set, force_write, verbose);
+                    fseek(stdin, total_written, SEEK_SET);
                     sleep(10);
-                    if (verbose) {
-                        fprintf(stderr, "opened open_fd %d and starting over!\n", open_fd);
-                    }
                     continue;
                 }
                 error_and_exit(conn, "Error:  rcDataObjWrite failed with status %ld\n", written_out, get_irods_error_name(written_out, verbose));
@@ -560,8 +554,6 @@ int main (int argc, char **argv) {
         if (read_in != written_out) {
             error_and_exit(conn, "Error: write fail %ld written, should be %ld.\n", written_out, read_in);
         }
-
-        //close_data_object(&conn, &open_obj, verbose);
     };
 
     if (verbose) {
