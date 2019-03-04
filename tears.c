@@ -422,10 +422,54 @@ int main (int argc, char **argv) {
         error_and_exit(conn, "Error: failed connecting to server with status %d\n", status);
     }
 
+/*
     if (write_to_irods) {
         open_fd = create_data_object(conn, obj_name, &irods_env, server_set, force_write, verbose);
     } else {
         open_fd = open_data_object(conn, obj_name, &irods_env, total_written, server_set, force_write, verbose);
+    }
+*/
+
+    // set up the data object
+    dataObjInp_t data_obj;
+    char* new_host = NULL;
+    memset(&data_obj, 0, sizeof(data_obj));
+    strncpy(data_obj.objPath, obj_name, MAX_NAME_LEN);
+
+    if (write_to_irods) {
+    	data_obj.openFlags = O_WRONLY;
+    } else {
+    	data_obj.openFlags = O_RDONLY;
+    }
+
+    data_obj.dataSize = 0;
+
+    // talk to server
+    if (write_to_irods) {
+    	if (!server_set) {
+            if ((status = rcGetHostForPut(conn, &data_obj, &new_host)) < 0) {
+                error_and_exit(conn, "Error: rcGetHostForPut failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
+            }
+            choose_server(&conn, new_host, &irods_env, verbose);
+            free(new_host);
+        }
+        if (force_write) {
+            addKeyVal(&data_obj.condInput, FORCE_FLAG_KW, "");
+        }
+        if ((open_fd = rcDataObjCreate(conn, &data_obj)) < 0) {
+            error_and_exit(conn, "Error: rcDataObjCreate failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
+        }
+    } else {
+        if (!server_set) {
+            if ((status = rcGetHostForGet(conn, &data_obj, &new_host)) < 0) {
+                error_and_exit(conn, "Error: rcGetHostForGet failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
+            }
+            choose_server(&conn, new_host, &irods_env, verbose);
+            free(new_host);
+        }
+        if ((open_fd = rcDataObjOpen(conn, &data_obj)) < 0) {
+                error_and_exit(conn, "Error: rcDataObjOpen failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
+        }
     }
 
     if (verbose) {
