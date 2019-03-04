@@ -219,7 +219,15 @@ int connect_to_server(rcComm_t **conn, char *host, rodsEnv *irods_env, int verbo
         if (verbose) {
             fprintf(stderr, "Disconnecting from current conn and using new conn\n");
         }
-        rcDisconnect(*conn);
+        //if (*conn) {
+            //if (verbose) {
+                //fprintf(stderr, "disconnecting conn at %p\n", *conn);
+            //}
+            //rcDisconnect(*conn);
+        //}
+        if (verbose) {
+            fprintf(stderr, "Swapping *conn with new_conn at %p\n", new_conn);
+        }
         *conn = new_conn;
     }
     return 0;
@@ -260,7 +268,9 @@ int create_data_object(rcComm_t** conn, const char* obj_name, rodsEnv* irods_env
         choose_server(conn, new_host, irods_env, verbose);
         free(new_host);
     }
-    fprintf(stderr, "connected to server:%s\n", (*conn)->host);
+    if (verbose) {
+        fprintf(stderr, "connected to server:%s\n", (*conn)->host);
+    }
 
     if (force_write) {
         addKeyVal(&data_obj.condInput, FORCE_FLAG_KW, "");
@@ -272,7 +282,8 @@ int create_data_object(rcComm_t** conn, const char* obj_name, rodsEnv* irods_env
     return open_fd;
 }
 
-int open_data_object(rcComm_t** conn, const char* obj_name, rodsEnv* irods_env, unsigned long offset_in_bytes, int server_set, int force_write, int verbose) {
+
+int open_data_object(rcComm_t** conn, const char* obj_name, rodsEnv* irods_env, unsigned long offset_in_bytes, int write_to_irods, int server_set, int force_write, int verbose) {
     int open_fd = 0;
     char* new_host = NULL;
 
@@ -280,7 +291,11 @@ int open_data_object(rcComm_t** conn, const char* obj_name, rodsEnv* irods_env, 
     dataObjInp_t data_obj;
     memset(&data_obj, 0, sizeof(data_obj));
     strncpy(data_obj.objPath, obj_name, MAX_NAME_LEN);
-    data_obj.openFlags = O_RDONLY;
+    if (write_to_irods) {
+        data_obj.openFlags = O_WRONLY;
+    } else {
+        data_obj.openFlags = O_RDONLY;
+    }
     data_obj.dataSize = 0;
 
     if (!server_set) {
@@ -292,6 +307,13 @@ int open_data_object(rcComm_t** conn, const char* obj_name, rodsEnv* irods_env, 
         free(new_host);
     }
 
+    if (force_write) {
+        addKeyVal(&data_obj.condInput, FORCE_FLAG_KW, "");
+    }
+
+    if (verbose) {
+        fprintf(stderr, "opening data obj %s\n", data_obj.objPath);
+    }
     if ((open_fd = rcDataObjOpen(*conn, &data_obj)) < 0) {
         error_and_exit(*conn, "Error: rcDataObjOpen failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
     }
@@ -303,16 +325,29 @@ int open_data_object(rcComm_t** conn, const char* obj_name, rodsEnv* irods_env, 
         dataObjLseekInp.whence = SEEK_SET;
         dataObjLseekInp.l1descInx = open_fd;
         dataObjLseekInp.offset = offset_in_bytes;
+        if (verbose) {
+            fprintf(stderr, "seeking to %lu\n", offset_in_bytes);
+        }
         if (rcDataObjLseek(*conn, &dataObjLseekInp, &dataObjLseekOut) < 0) {
             error_and_exit(*conn, "Error: rcDataObjLseek failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
         } else if (dataObjLseekOut) {
             free(dataObjLseekOut);
+        }
+        if (verbose) {
+            fprintf(stderr, "rcDataObjLseek done\n");
         }
     }
 
     return open_fd;
 }
 
+
+void close_data_object(rcComm_t** conn, openedDataObjInp_t* open_obj, int verbose) {
+    int status = 0;
+    if ((status = rcDataObjClose(*conn, open_obj)) < 0) {
+        error_and_exit(*conn, "Error: rcDataObjClose failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
+    }
+}
 
 int main (int argc, char **argv) {
     rcComm_t           *conn = NULL;
@@ -423,56 +458,8 @@ int main (int argc, char **argv) {
     if (write_to_irods) {
         open_fd = create_data_object(&conn, obj_name, &irods_env, server_set, force_write, verbose);
     } else {
-        open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, server_set, force_write, verbose);
+        open_fd = open_data_object(&conn, obj_name, &irods_env, write_to_irods, total_written, server_set, force_write, verbose);
     }
-
-/*
-    // set up the data object
-    char* new_host = NULL;
-
-    dataObjInp_t data_obj;
-    memset(&data_obj, 0, sizeof(data_obj));
-    strncpy(data_obj.objPath, obj_name, MAX_NAME_LEN);
-
-    if (write_to_irods) {
-    	data_obj.openFlags = O_WRONLY;
-    } else {
-    	data_obj.openFlags = O_RDONLY;
-    }
-
-    data_obj.dataSize = 0;
-
-    // talk to server
-    if (write_to_irods) {
-    	if (!server_set) {
-            if ((status = rcGetHostForPut(conn, &data_obj, &new_host)) < 0) {
-                error_and_exit(conn, "Error: rcGetHostForPut failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
-            }
-            choose_server(&conn, new_host, &irods_env, verbose);
-            free(new_host);
-        }
-        fprintf(stderr, "connected to server:%s\n", conn->host);
-
-        if (force_write) {
-            addKeyVal(&data_obj.condInput, FORCE_FLAG_KW, "");
-        }
-
-        if ((open_fd = rcDataObjCreate(conn, &data_obj)) < 0) {
-            error_and_exit(conn, "Error: rcDataObjCreate failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
-        }
-    } else {
-        if (!server_set) {
-            if ((status = rcGetHostForGet(conn, &data_obj, &new_host)) < 0) {
-                error_and_exit(conn, "Error: rcGetHostForGet failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
-            }
-            choose_server(&conn, new_host, &irods_env, verbose);
-            free(new_host);
-        }
-        if ((open_fd = rcDataObjOpen(conn, &data_obj)) < 0) {
-                error_and_exit(conn, "Error: rcDataObjOpen failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
-        }
-    }
-*/
 
     if (verbose) {
         fprintf(stderr, "open_fd == %d\n", open_fd);
@@ -484,6 +471,8 @@ int main (int argc, char **argv) {
         bytesBuf_t data_buffer;
         long read_in;
         long written_out;
+
+        //open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, server_set, force_write, verbose);
 
         // set up common data elements
         memset(&open_obj, 0, sizeof(open_obj));
@@ -503,8 +492,9 @@ int main (int argc, char **argv) {
                 // Agent fell over - reconnect, seek to total written and try again
                 if (SYS_HEADER_READ_LEN_ERR == written_out ||
                     SYS_SOCK_READ_ERR == written_out) {
-                    connect_to_server(&conn, NULL, &irods_env, verbose);
-                    open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, server_set, force_write, verbose);
+                    connect_to_server(&conn, irods_env.rodsHost, &irods_env, verbose);
+                    //close_data_object(&conn, &open_obj, verbose);
+                    open_fd = open_data_object(&conn, obj_name, &irods_env, write_to_irods, total_written, server_set, force_write, verbose);
                     continue;
                 }
                 error_and_exit(conn, "Error:  rcDataObjRead failed with status %ld:%s\n", read_in, get_irods_error_name(read_in, verbose));
@@ -515,7 +505,12 @@ int main (int argc, char **argv) {
             fprintf(stderr, "%ld bytes read\n", read_in);
         }
 
-        if (!read_in) break;
+        if (!read_in) {
+            if (verbose) {
+                fprintf(stderr, "Nothing read in. Stopping...\n");
+            }
+            break;
+        }
 
         // now try and write something
         if (write_to_irods) {
@@ -526,17 +521,27 @@ int main (int argc, char **argv) {
                 fprintf(stderr, "Preparing to write... read_in:[%ld],status:[%d]\n", read_in, conn->status);
             }
             if ((written_out = rcDataObjWrite(conn, &open_obj, &data_buffer)) < 0) {
+                if (verbose) {
+                    fprintf(stderr, "write failed with status %ld\n", written_out);
+                }
                 // Agent fell over - reconnect, seek to total written and try again
                 if (SYS_HEADER_READ_LEN_ERR == written_out ||
-                    SYS_SOCK_READ_ERR == written_out) {
+                    (written_out >= SYS_SOCK_READ_ERR && written_out <= SYS_SOCK_READ_ERR + 999)) {
                     if (verbose) {
                         fprintf(stderr, "Someting bad happened... reconnecting\n");
                     }
-                    connect_to_server(&conn, NULL, &irods_env, verbose);
+                    connect_to_server(&conn, irods_env.rodsHost, &irods_env, verbose);
+                    //if (verbose) {
+                        //fprintf(stderr, "...closing data object...\n");
+                    //}
+                    //close_data_object(&conn, &open_obj, verbose);
                     if (verbose) {
                         fprintf(stderr, "...and re-opening\n");
                     }
-                    open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, server_set, force_write, verbose);
+                    open_fd = open_data_object(&conn, obj_name, &irods_env, write_to_irods, total_written, server_set, force_write, verbose);
+                    if (verbose) {
+                        fprintf(stderr, "opened open_fd %d and starting over!\n", open_fd);
+                    }
                     continue;
                 }
                 error_and_exit(conn, "Error:  rcDataObjWrite failed with status %ld\n", written_out, get_irods_error_name(written_out, verbose));
@@ -554,15 +559,15 @@ int main (int argc, char **argv) {
         if (read_in != written_out) {
             error_and_exit(conn, "Error: write fail %ld written, should be %ld.\n", written_out, read_in);
         }
+
+        //close_data_object(&conn, &open_obj, verbose);
     };
 
     if (verbose) {
         fprintf(stderr, "Total bytes written %ld\n", total_written);
     }
 
-    if ((status = rcDataObjClose(conn, &open_obj)) < 0) {
-        error_and_exit(conn, "Error: rcDataObjClose failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
-    }
+    close_data_object(&conn, &open_obj, verbose);
 
     rcDisconnect(conn);
     free(buffer);
