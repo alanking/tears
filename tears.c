@@ -418,6 +418,9 @@ int main (int argc, char **argv) {
     if (status) {
         error_and_exit(conn, "Error: failed connecting to server with status %d\n", status);
     }
+    if (!conn) {
+        error_and_exit(conn, "Error: conn handle is NULL\n");
+    }
 
     if (write_to_irods) {
         open_fd = create_data_object(conn, obj_name, &irods_env, server_set, force_write, verbose);
@@ -468,6 +471,9 @@ int main (int argc, char **argv) {
             open_obj.len = read_in;
             data_buffer.len = open_obj.len;
 
+            if (verbose) {
+                fprintf(stderr, "Preparing to write to %s\n", open_obj.objPath);
+            }
             if ((written_out = rcDataObjWrite(conn, &open_obj, &data_buffer)) < 0) {
                 // Agent fell over - reconnect, seek to total written and try again
                 if (SYS_HEADER_READ_LEN_ERR == written_out ||
