@@ -262,7 +262,7 @@ void choose_server(rcComm_t **cn, char *host, rodsEnv *env, int verb) {
 int open_or_create_data_object(
     rcComm_t** conn,
     const char* obj_name,
-    rodsEnv* irods_env,
+    const rodsEnv* irods_env,
     const unsigned long offset_in_bytes,
     const int write_to_irods,
     const int server_set,
