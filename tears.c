@@ -229,17 +229,11 @@ int choose_server(
     tears_context_t* ctx) {
 
     char* new_host = NULL;
-    rErrMsg_t err_msg;
-    rcComm_t* conn = rcConnect(irods_env->rodsHost, irods_env->rodsPort,
-                               irods_env->rodsUserName, irods_env->rodsZone,
-                               0, &err_msg);
-    if (!conn) {
-        return err_msg.status;
+    rcComm_t* conn = NULL;
+    int status = connect_to_server(&conn, irods_env, ctx);
+    if (status < 0) {
+        return status;
     }
-
-    fprintf(stderr, "dataObjInp_t path:[%s],obj_path:[%s]\n", ctx->data_obj.objPath, ctx->obj_path);
-
-    int status = 0;
     if (ctx->write_to_irods) {
         if ((status = rcGetHostForPut(conn, &ctx->data_obj, &new_host)) < 0) {
             fprintf(stderr, "Error: rcGetHostForPut failed with status %d:%s\n", status, get_irods_error_name(status, ctx->verbose));
@@ -438,14 +432,12 @@ int main (int argc, char **argv) {
 
     setup_dataObjInp(&ctx);
 
-#if 0
     if (!ctx.server_set) {
         status = choose_server(&irods_env, &ctx);
         if (status < 0) {
             error_and_exit(conn, "Error: choosing server failed with status %d\n", status, get_irods_error_name(status, ctx.verbose));
         }
     }
-#endif
 
     status = connect_to_server(&conn, &irods_env, &ctx);
     if (status < 0) {
