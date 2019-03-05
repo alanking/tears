@@ -434,12 +434,12 @@ int main (int argc, char **argv) {
 
     setup_dataObjInp(&ctx);
 
-    status = choose_server(ctx.data_obj, &irods_env, &ctx);
+    status = choose_server(&irods_env, &ctx);
     if (status < 0) {
-        error_and_exit(*conn, "Error: choosing server failed with status %d\n", status, get_irods_error_name(status, ctx.verbose));
+        error_and_exit(conn, "Error: choosing server failed with status %d\n", status, get_irods_error_name(status, ctx.verbose));
     }
 
-    status = connect_to_server(&irods_env, &ctx);
+    status = connect_to_server(conn, &irods_env, &ctx);
     if (status < 0) {
         error_and_exit(conn, "Error: failed connecting to server with status %d\n", status);
     }
@@ -476,7 +476,7 @@ int main (int argc, char **argv) {
                 // Agent fell over - reconnect, seek to total written and try again
                 if (SYS_HEADER_READ_LEN_ERR == read_in ||
                     (read_in <= SYS_SOCK_READ_ERR && read_in >= SYS_SOCK_READ_ERR - 999)) {
-                    connect_to_server(&conn, irods_env.rodsHost, &irods_env, &ctx);
+                    connect_to_server(conn, irods_env.rodsHost, &irods_env, &ctx);
                     open_fd = open_data_object(&conn, &irods_env, total_written, &ctx);
                     fseek(stdout, total_written, SEEK_SET);
                     continue;
@@ -500,7 +500,7 @@ int main (int argc, char **argv) {
                 // Agent fell over - reconnect, seek to total written and try again
                 if (SYS_HEADER_READ_LEN_ERR == written_out ||
                     (written_out <= SYS_SOCK_READ_ERR && written_out >= SYS_SOCK_READ_ERR - 999)) {
-                    connect_to_server(&conn, irods_env.rodsHost, &irods_env, &ctx);
+                    connect_to_server(conn, irods_env.rodsHost, &irods_env, &ctx);
                     open_fd = open_data_object(&conn, &irods_env, total_written, &ctx);
                     fseek(stdin, total_written, SEEK_SET);
                     continue;
