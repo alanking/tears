@@ -193,11 +193,33 @@ int irods_uri_check(char *uri, rodsEnv *env, int verb) {
 }
 
 
+int socket_is_good(rcComm_t* conn) {
+
+    int error = 0;
+    socklen_t len = sizeof (error);
+    int retval = getsockopt(conn->sock, SOL_SOCKET, SO_ERROR, &error, &len);
+
+if (retval != 0) {
+    /* there was a problem getting the error code */
+    fprintf(stderr, "error getting socket error code: %s\n", strerror(retval));
+    return 0;
+}
+
+if (error != 0) {
+    /* socket has a non zero error status */
+    fprintf(stderr, "socket error: %s\n", strerror(error));
+    return 0;
+}
+
+return 1;
+}
+
 int connect_to_server(
     rcComm_t** conn,
     const char *host,
     const rodsEnv *irods_env,
-    const int verbose) {
+    const int verbose,
+    const int needs_disconnect) {
 
     rErrMsg_t err_msg;
     int status = 0;
@@ -227,14 +249,21 @@ int connect_to_server(
 
         // disconnect old connection handle
         //if (*conn) {
-            //if (verbose) {
-                //fprintf(stderr, "disconnecting conn at %p\n", *conn);
-            //}
-            //status = rcDisconnect(*conn);
-            //if (status < 0) {
-                //fprintf(stderr, "disconnecting conn at %p failed with status %d\n", *conn, status);
-            //}
-        //}
+        //if (conn && *conn && socket_is_good(*conn)) {
+        if (conn && *conn && needs_disconnect) {
+            if (verbose) {
+                fprintf(stderr, "disconnecting conn at %p\n", *conn);
+            }
+            status = rcDisconnect(*conn);
+            if (status < 0) {
+                fprintf(stderr, "disconnecting conn at %p failed with status %d\n", *conn, status);
+            }
+        }
+        else {
+            if (verbose) {
+                fprintf(stderr, "Socket was baaaad\n");
+            }
+        }
 
         if (verbose) {
             fprintf(stderr, "Swapping *conn with new_conn at %p\n", new_conn);
@@ -245,13 +274,13 @@ int connect_to_server(
 }
 
 
-void choose_server(rcComm_t **cn, const char *host, const rodsEnv *env, const int verb) {
+void choose_server(rcComm_t **cn, const char *host, const rodsEnv *env, const int verb, const int needs_disconnect) {
     if (verb) {
         fprintf(stderr, "Chosen server is: %s\n", host);
     }
 
     if (host && strcmp(host, THIS_ADDRESS)) {
-        int status = connect_to_server(cn, host, env, verb);
+        int status = connect_to_server(cn, host, env, verb, needs_disconnect);
         if (status) {
             fprintf(stderr, "Error: rcReconnect failed with status %d.  Continuing with original server.\n", status);
         }
@@ -268,6 +297,7 @@ int open_or_create_data_object(
     const int server_set,
     const int force_write,
     const int verbose,
+    const int needs_disconnect,
     int (*open_func)(rcComm_t*, dataObjInp_t*)) {
 
     int open_fd = 0;
@@ -284,6 +314,11 @@ int open_or_create_data_object(
     }
     data_obj.dataSize = 0;
 
+    //int status = connect_to_server(conn, irods_env->rodsHost, irods_env, verbose);
+    //if (status < 0) {
+        //error_and_exit(*conn, "Error: failed connecting to server with status %d\n", status);
+    //}
+
     if (!server_set) {
         int status = 0;
         if (write_to_irods) {
@@ -297,7 +332,7 @@ int open_or_create_data_object(
                  return status;
              }
         }
-        choose_server(conn, new_host, irods_env, verbose);
+        choose_server(conn, new_host, irods_env, verbose, needs_disconnect);
         free(new_host);
     }
 
@@ -337,7 +372,7 @@ int create_data_object(
     const int force_write,
     const int verbose) {
 
-    int open_fd = open_or_create_data_object(conn, obj_name, irods_env, 0, 1, server_set, force_write, verbose, rcDataObjCreate);
+    int open_fd = open_or_create_data_object(conn, obj_name, irods_env, 0, 1, server_set, force_write, verbose, 1, rcDataObjCreate);
     if (open_fd < 0) {
         error_and_exit(*conn, "Error: Creating file failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
     }
@@ -353,9 +388,10 @@ int open_data_object(
     const int write_to_irods,
     const int server_set,
     const int force_write,
-    const int verbose) {
+    const int verbose,
+    const int needs_disconnect) {
 
-    int open_fd = open_or_create_data_object(conn, obj_name, irods_env, offset_in_bytes, write_to_irods, server_set, force_write, verbose, rcDataObjOpen);
+    int open_fd = open_or_create_data_object(conn, obj_name, irods_env, offset_in_bytes, write_to_irods, server_set, force_write, verbose, needs_disconnect, rcDataObjOpen);
     if (open_fd < 0) {
         error_and_exit(*conn, "Error: Opening file failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
     }
@@ -464,7 +500,7 @@ int main (int argc, char **argv) {
         init_client_api_table();
     #endif
 
-    status = connect_to_server(&conn, irods_env.rodsHost, &irods_env, verbose);
+    status = connect_to_server(&conn, irods_env.rodsHost, &irods_env, verbose, 1);
     if (status < 0) {
         error_and_exit(conn, "Error: failed connecting to server with status %d\n", status);
     }
@@ -472,7 +508,7 @@ int main (int argc, char **argv) {
     if (write_to_irods) {
         open_fd = create_data_object(&conn, obj_name, &irods_env, server_set, force_write, verbose);
     } else {
-        open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, write_to_irods, server_set, force_write, verbose);
+        open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, write_to_irods, server_set, force_write, verbose, 1);
     }
 
     if (verbose) {
@@ -504,8 +540,8 @@ int main (int argc, char **argv) {
                 // Agent fell over - reconnect, seek to total written and try again
                 if (SYS_HEADER_READ_LEN_ERR == read_in ||
                     (read_in <= SYS_SOCK_READ_ERR && read_in >= SYS_SOCK_READ_ERR - 999)) {
-                    connect_to_server(&conn, irods_env.rodsHost, &irods_env, verbose);
-                    open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, write_to_irods, server_set, force_write, verbose);
+                    connect_to_server(&conn, irods_env.rodsHost, &irods_env, verbose, 0);
+                    open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, write_to_irods, server_set, force_write, verbose, 0);
                     fseek(stdout, total_written, SEEK_SET);
                     continue;
                 }
@@ -528,8 +564,8 @@ int main (int argc, char **argv) {
                 // Agent fell over - reconnect, seek to total written and try again
                 if (SYS_HEADER_READ_LEN_ERR == written_out ||
                     (written_out <= SYS_SOCK_READ_ERR && written_out >= SYS_SOCK_READ_ERR - 999)) {
-                    connect_to_server(&conn, irods_env.rodsHost, &irods_env, verbose);
-                    open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, write_to_irods, server_set, force_write, verbose);
+                    connect_to_server(&conn, irods_env.rodsHost, &irods_env, verbose, 0);
+                    open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, write_to_irods, server_set, force_write, verbose, 0);
                     fseek(stdin, total_written, SEEK_SET);
                     continue;
                 }
