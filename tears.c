@@ -111,7 +111,7 @@ int irods_uri_check(char *uri, rodsEnv *env, int verb) {
     if (strncmp(uri, "irods:", 6) != 0) {
         if (verb) {
         fprintf(stderr, "No iRODS URI, using default settings.\n");
-    }
+        }
 
         return 0;
     }
@@ -204,21 +204,21 @@ int irods_uri_check(char *uri, rodsEnv *env, int verb) {
 }
 
 int connect_to_server(
-    rcComm_t* conn,
+    rcComm_t** conn,
     const rodsEnv* irods_env,
     const tears_context_t* ctx) {
     rErrMsg_t err_msg;
-    conn = rcConnect(irods_env->rodsHost, irods_env->rodsPort,
+    *conn = rcConnect(irods_env->rodsHost, irods_env->rodsPort,
                      irods_env->rodsUserName, irods_env->rodsZone,
                      0, &err_msg);
-    if (!conn) {
+    if (!*conn) {
         return err_msg.status;
     }
 
-    int status = clientLogin(conn, "", "");
+    int status = clientLogin(*conn, "", "");
     if (status < 0) {
-        rcDisconnect(conn);
-        error_and_exit(conn, "Error: clientLogin failed with status %d:%s\n", status, get_irods_error_name(status, ctx->verbose));
+        rcDisconnect(*conn);
+        error_and_exit(*conn, "Error: clientLogin failed with status %d:%s\n", status, get_irods_error_name(status, ctx->verbose));
     }
     return 0;
 }
@@ -263,7 +263,7 @@ int choose_server(
 
 void setup_dataObjInp(tears_context_t* ctx) {
     memset(&ctx->data_obj, 0, sizeof(ctx->data_obj));
-    strncpy(ctx->data_obj.objPath, ctx->obj_path, MAX_NAME_LEN);
+    rstrcpy(ctx->data_obj.objPath, ctx->obj_path, MAX_NAME_LEN);
     if (ctx->write_to_irods) {
         ctx->data_obj.openFlags = O_WRONLY;
     }
@@ -279,7 +279,7 @@ void setup_dataObjInp(tears_context_t* ctx) {
 
 
 int open_or_create_data_object(
-    rcComm_t** conn,
+    rcComm_t* conn,
     const rodsEnv* irods_env,
     const unsigned long offset_in_bytes,
     tears_context_t* ctx,
@@ -287,8 +287,10 @@ int open_or_create_data_object(
 
     int open_fd = 0;
 
-    if ((open_fd = open_func(*conn, &ctx->data_obj)) < 0) {
-        fprintf(stderr, "Error: rcGetHostForGet failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, ctx->verbose));
+    fprintf(stderr, "conn:[%p],dataObjInp_t path:[%s],obj_path:[%s]\n", conn, ctx->data_obj.objPath, ctx->obj_path);
+
+    if ((open_fd = open_func(conn, &ctx->data_obj)) < 0) {
+        fprintf(stderr, "Error: open_func failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, ctx->verbose));
         return open_fd;
     }
 
@@ -300,7 +302,7 @@ int open_or_create_data_object(
         dataObjLseekInp.l1descInx = open_fd;
         dataObjLseekInp.offset = offset_in_bytes;
         int status = 0;
-        if (status = rcDataObjLseek(*conn, &dataObjLseekInp, &dataObjLseekOut) < 0) {
+        if (status = rcDataObjLseek(conn, &dataObjLseekInp, &dataObjLseekOut) < 0) {
             fprintf(stderr, "Error: rcDataObjLseek in file failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, ctx->verbose));
             return status;
         } else if (dataObjLseekOut) {
@@ -312,27 +314,27 @@ int open_or_create_data_object(
 }
 
 int create_data_object(
-    rcComm_t** conn,
+    rcComm_t* conn,
     const rodsEnv* irods_env,
     tears_context_t* ctx) {
 
     int open_fd = open_or_create_data_object(conn, irods_env, 0, ctx, rcDataObjCreate);
     if (open_fd < 0) {
-        error_and_exit(*conn, "Error: Creating file failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, ctx->verbose));
+        error_and_exit(conn, "Error: Creating file failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, ctx->verbose));
     }
     return open_fd;
 }
 
 
 int open_data_object(
-    rcComm_t** conn,
+    rcComm_t* conn,
     const rodsEnv* irods_env,
     const unsigned long offset_in_bytes,
     tears_context_t* ctx) {
 
     int open_fd = open_or_create_data_object(conn, irods_env, offset_in_bytes, ctx, rcDataObjOpen);
     if (open_fd < 0) {
-        error_and_exit(*conn, "Error: Opening file failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, ctx->verbose));
+        error_and_exit(conn, "Error: Opening file failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, ctx->verbose));
     }
     return open_fd;
 }
@@ -436,21 +438,25 @@ int main (int argc, char **argv) {
 
     setup_dataObjInp(&ctx);
 
-    status = choose_server(&irods_env, &ctx);
-    if (status < 0) {
-        error_and_exit(conn, "Error: choosing server failed with status %d\n", status, get_irods_error_name(status, ctx.verbose));
+#if 0
+    if (!ctx.server_set) {
+        status = choose_server(&irods_env, &ctx);
+        if (status < 0) {
+            error_and_exit(conn, "Error: choosing server failed with status %d\n", status, get_irods_error_name(status, ctx.verbose));
+        }
     }
+#endif
 
-    status = connect_to_server(conn, &irods_env, &ctx);
+    status = connect_to_server(&conn, &irods_env, &ctx);
     if (status < 0) {
         error_and_exit(conn, "Error: failed connecting to server with status %d\n", status);
     }
 
     if (ctx.write_to_irods) {
-        open_fd = create_data_object(&conn, &irods_env, &ctx);
+        open_fd = create_data_object(conn, &irods_env, &ctx);
     }
     else {
-        open_fd = open_data_object(&conn, &irods_env, total_written, &ctx);
+        open_fd = open_data_object(conn, &irods_env, total_written, &ctx);
     }
 
     // the read/write loop
@@ -478,8 +484,8 @@ int main (int argc, char **argv) {
                 // Agent fell over - reconnect, seek to total written and try again
                 if (SYS_HEADER_READ_LEN_ERR == read_in ||
                     (read_in <= SYS_SOCK_READ_ERR && read_in >= SYS_SOCK_READ_ERR - 999)) {
-                    connect_to_server(conn, &irods_env, &ctx);
-                    open_fd = open_data_object(&conn, &irods_env, total_written, &ctx);
+                    connect_to_server(&conn, &irods_env, &ctx);
+                    open_fd = open_data_object(conn, &irods_env, total_written, &ctx);
                     fseek(stdout, total_written, SEEK_SET);
                     continue;
                 }
@@ -502,8 +508,8 @@ int main (int argc, char **argv) {
                 // Agent fell over - reconnect, seek to total written and try again
                 if (SYS_HEADER_READ_LEN_ERR == written_out ||
                     (written_out <= SYS_SOCK_READ_ERR && written_out >= SYS_SOCK_READ_ERR - 999)) {
-                    connect_to_server(conn, &irods_env, &ctx);
-                    open_fd = open_data_object(&conn, &irods_env, total_written, &ctx);
+                    connect_to_server(&conn, &irods_env, &ctx);
+                    open_fd = open_data_object(conn, &irods_env, total_written, &ctx);
                     fseek(stdin, total_written, SEEK_SET);
                     continue;
                 }
