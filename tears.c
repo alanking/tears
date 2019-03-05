@@ -45,7 +45,7 @@ typedef struct {
     int force_write;
     char* obj_name;
     int needs_disconnect;
-    dataObjInp_t* data_obj;
+    dataObjInp_t data_obj;
 } tears_context_t;
 
 void usage_and_exit(char *pname, int exit_code) {
@@ -233,6 +233,9 @@ int choose_server(
     rcComm_t* conn = rcConnect(irods_env->rodsHost, irods_env->rodsPort,
                                irods_env->rodsUserName, irods_env->rodsZone,
                                0, &err_msg);
+    if (!conn) {
+        return err_msg.status;
+    }
 
     int status = 0;
     if (ctx->write_to_irods) {
@@ -257,21 +260,19 @@ int choose_server(
 
 
 void setup_dataObjInp(tears_context_t* ctx) {
-    dataObjInp_t data_obj;
-    memset(&data_obj, 0, sizeof(data_obj));
-    strncpy(data_obj.objPath, ctx->obj_name, MAX_NAME_LEN);
+    memset(&ctx->data_obj, 0, sizeof(ctx->data_obj));
+    strncpy(ctx->data_obj.objPath, ctx->obj_name, MAX_NAME_LEN);
     if (ctx->write_to_irods) {
-        data_obj.openFlags = O_WRONLY;
+        ctx->data_obj.openFlags = O_WRONLY;
     }
     else {
-        data_obj.openFlags = O_RDONLY;
+        ctx->data_obj.openFlags = O_RDONLY;
     }
-    data_obj.dataSize = 0;
+    ctx->data_obj.dataSize = 0;
 
     if (ctx->force_write) {
-        addKeyVal(&data_obj.condInput, FORCE_FLAG_KW, "");
+        addKeyVal(&ctx->data_obj.condInput, FORCE_FLAG_KW, "");
     }
-    ctx->data_obj = &data_obj;
 }
 
 
@@ -337,7 +338,6 @@ int open_data_object(
 
 int main (int argc, char **argv) {
     rcComm_t           *conn = NULL;
-    rodsEnv            irods_env;
     rErrMsg_t          err_msg;
     openedDataObjInp_t open_obj;
     int                open_fd;
@@ -413,7 +413,7 @@ int main (int argc, char **argv) {
 
     setenv(SP_OPTION, prog_name, 1);
 
-    // lets get the irods environment
+    rodsEnv irods_env;
     if ((status = getRodsEnv(&irods_env)) < 0) {
         error_and_exit(conn, "Error: getRodsEnv failed with status %d:%s\n", status, get_irods_error_name(status, ctx.verbose));
     }
