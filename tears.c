@@ -239,12 +239,12 @@ int choose_server(
 
     int status = 0;
     if (ctx->write_to_irods) {
-        if ((status = rcGetHostForPut(conn, ctx->data_obj, &new_host)) < 0) {
+        if ((status = rcGetHostForPut(conn, &ctx->data_obj, &new_host)) < 0) {
             fprintf(stderr, "Error: rcGetHostForPut failed with status %d:%s\n", status, get_irods_error_name(status, ctx->verbose));
             return status;
         }
     } else {
-        if ((status = rcGetHostForGet(conn, ctx->data_obj, &new_host)) < 0) {
+        if ((status = rcGetHostForGet(conn, &ctx->data_obj, &new_host)) < 0) {
             fprintf(stderr, "Error: rcGetHostForGet failed with status %d:%s\n", status, get_irods_error_name(status, ctx->verbose));
             return status;
         }
@@ -285,7 +285,7 @@ int open_or_create_data_object(
 
     int open_fd = 0;
 
-    if ((open_fd = open_func(*conn, ctx->data_obj)) < 0) {
+    if ((open_fd = open_func(*conn, &ctx->data_obj)) < 0) {
         fprintf(stderr, "Error: rcGetHostForGet failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, ctx->verbose));
         return open_fd;
     }
