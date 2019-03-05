@@ -254,46 +254,46 @@ int connect_to_server(
 }
 
 
-void choose_server(
+int choose_server(
     rcComm_t** conn,
+    dataObjInp_t* data_obj,
     const rodsEnv *irods_env,
-    const int verbose) {
-    if (verb) {
-        fprintf(stderr, "Chosen server is: %s\n", host);
-    }
-
+    tears_context_t* ctx) {
     int status = 0;
     char* new_host = NULL;
     if (write_to_irods) {
-         if ((status = rcGetHostForPut(*conn, &data_obj, &new_host)) < 0) {
-             fprintf(stderr, "Error: rcGetHostForPut failed with status %d:%s\n", status, get_irods_error_name(status, ctx.verbose));
+         if ((status = rcGetHostForPut(*conn, data_obj, &new_host)) < 0) {
+             fprintf(stderr, "Error: rcGetHostForPut failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
+            free(new_host);
              return status;
          }
     } else {
-         if ((status = rcGetHostForGet(*conn, &data_obj, &new_host)) < 0) {
-             fprintf(stderr, "Error: rcGetHostForGet failed with status %d:%s\n", status, get_irods_error_name(status, ctx.verbose));
+         if ((status = rcGetHostForGet(*conn, data_obj, &new_host)) < 0) {
+             fprintf(stderr, "Error: rcGetHostForGet failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
+            free(new_host);
              return status;
          }
     }
     if (new_host && strcmp(new_host, THIS_ADDRESS)) {
-        int status = connect_to_server(conn, new_host, irods_env, ctx.verbose);
+        if (ctx->verbose) {
+            fprintf(stderr, "Chosen server is: %s\n", new_host);
+        }
+
+        int status = connect_to_server(conn, new_host, irods_env, verbose);
         if (status) {
             fprintf(stderr, "Error: rcReconnect failed with status %d.  Continuing with original server.\n", status);
         }
     }
     free(new_host);
+    return 0;
 }
 
 
 int open_or_create_data_object(
     rcComm_t** conn,
-    const char* obj_name,
     const rodsEnv* irods_env,
     const unsigned long offset_in_bytes,
-    const int write_to_irods,
-    const int server_set,
-    const int force_write,
-    const int verbose,
+    const tears_context_t* ctx,
     int (*open_func)(rcComm_t*, dataObjInp_t*)) {
 
     int open_fd = 0;
@@ -301,15 +301,19 @@ int open_or_create_data_object(
     // set up the data object
     dataObjInp_t data_obj;
     memset(&data_obj, 0, sizeof(data_obj));
-    strncpy(data_obj.objPath, obj_name, MAX_NAME_LEN);
-    if (write_to_irods) {
+    strncpy(data_obj.objPath, ctx->obj_name, MAX_NAME_LEN);
+    if (ctx->write_to_irods) {
         data_obj.openFlags = O_WRONLY;
     } else {
         data_obj.openFlags = O_RDONLY;
     }
     data_obj.dataSize = 0;
 
-    if (!server_set) {
+    if (!ctx->server_set) {
+        int status = choose_server(conn, &data_obj, irods_env, ctx->verbose);
+        if (status < 0) {
+            error_and_exit(new_conn, "Error: choosing server failed with status %d\n", status, get_irods_error_name(status, ctx->verbose));
+        }
     }
 
     if (force_write) {
@@ -342,15 +346,12 @@ int open_or_create_data_object(
 
 int create_data_object(
     rcComm_t** conn,
-    const char* obj_name,
     const rodsEnv* irods_env,
-    const int server_set,
-    const int force_write,
-    const int verbose) {
+    const tears_context_t* ctx) {
 
-    int open_fd = open_or_create_data_object(conn, obj_name, irods_env, 0, 1, server_set, force_write, ctx.verbose, rcDataObjCreate);
+    int open_fd = open_or_create_data_object(conn, irods_env, 0, ctx, rcDataObjCreate);
     if (open_fd < 0) {
-        error_and_exit(*conn, "Error: Creating file failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, ctx.verbose));
+        error_and_exit(*conn, "Error: Creating file failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, ctx->verbose));
     }
     return open_fd;
 }
@@ -358,17 +359,13 @@ int create_data_object(
 
 int open_data_object(
     rcComm_t** conn,
-    const char* obj_name,
     const rodsEnv* irods_env,
     const unsigned long offset_in_bytes,
-    const int write_to_irods,
-    const int server_set,
-    const int force_write,
-    const int verbose) {
+    const tears_context_t* ctx) {
 
-    int open_fd = open_or_create_data_object(conn, obj_name, irods_env, offset_in_bytes, write_to_irods, server_set, force_write, ctx.verbose, rcDataObjOpen);
+    int open_fd = open_or_create_data_object(conn, irods_env, offset_in_bytes, ctx, rcDataObjOpen);
     if (open_fd < 0) {
-        error_and_exit(*conn, "Error: Opening file failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, ctx.verbose));
+        error_and_exit(*conn, "Error: Opening file failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, ctx->verbose));
     }
     return open_fd;
 }
@@ -462,8 +459,8 @@ int main (int argc, char **argv) {
         error_and_exit(conn, "Error: getRodsEnv failed with status %d:%s\n", status, get_irods_error_name(status, ctx.verbose));
     }
 
-    if ((status = irods_uri_check(obj_name, &irods_env, ctx.verbose)) < 0) {
-        error_and_exit(conn, "Error: invalid uri: %s\n", obj_name);
+    if ((status = irods_uri_check(ctx.obj_name, &irods_env, ctx.verbose)) < 0) {
+        error_and_exit(conn, "Error: invalid uri: %s\n", ctx.obj_name);
     } else if (status > 0) {
         server_set = 1;
     }
@@ -484,9 +481,9 @@ int main (int argc, char **argv) {
     }
 
     if (write_to_irods) {
-        open_fd = create_data_object(&conn, obj_name, &irods_env, server_set, force_write, ctx.verbose);
+        open_fd = create_data_object(&conn, &irods_env, &ctx);
     } else {
-        open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, write_to_irods, server_set, force_write, ctx.verbose);
+        open_fd = open_data_object(&conn, &irods_env, total_written, &ctx);
     }
 
     if (ctx.verbose) {
@@ -519,7 +516,7 @@ int main (int argc, char **argv) {
                 if (SYS_HEADER_READ_LEN_ERR == read_in ||
                     (read_in <= SYS_SOCK_READ_ERR && read_in >= SYS_SOCK_READ_ERR - 999)) {
                     connect_to_server(&conn, irods_env.rodsHost, &irods_env, ctx.verbose);
-                    open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, write_to_irods, server_set, force_write, ctx.verbose);
+                    open_fd = open_data_object(&conn, &irods_env, total_written, &ctx);
                     fseek(stdout, total_written, SEEK_SET);
                     continue;
                 }
@@ -543,7 +540,7 @@ int main (int argc, char **argv) {
                 if (SYS_HEADER_READ_LEN_ERR == written_out ||
                     (written_out <= SYS_SOCK_READ_ERR && written_out >= SYS_SOCK_READ_ERR - 999)) {
                     connect_to_server(&conn, irods_env.rodsHost, &irods_env, ctx.verbose);
-                    open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, write_to_irods, server_set, force_write, ctx.verbose);
+                    open_fd = open_data_object(&conn, &irods_env, total_written, &ctx);
                     fseek(stdin, total_written, SEEK_SET);
                     continue;
                 }
