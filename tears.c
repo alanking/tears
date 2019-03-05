@@ -204,7 +204,7 @@ int irods_uri_check(char *uri, rodsEnv *env, int verb) {
 }
 
 int connect_to_server(
-    const rcComm_t* conn,
+    rcComm_t* conn,
     const rodsEnv* irods_env,
     const tears_context_t* ctx) {
     rErrMsg_t err_msg;
@@ -225,7 +225,7 @@ int connect_to_server(
 
 
 int choose_server(
-    const rodsEnv *irods_env,
+    rodsEnv *irods_env,
     tears_context_t* ctx,
     dataObjInp_t* data_obj) {
 
