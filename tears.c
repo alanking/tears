@@ -237,7 +237,7 @@ int choose_server(
         return err_msg.status;
     }
 
-    fprintf(stderr, "dataObjInp_t path:[%s],obj_path:[%s]\n", ctx->data_obj.obj_path, ctx->obj_path);
+    fprintf(stderr, "dataObjInp_t path:[%s],obj_path:[%s]\n", ctx->data_obj.objPath, ctx->obj_path);
 
     int status = 0;
     if (ctx->write_to_irods) {
