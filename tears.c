@@ -245,7 +245,7 @@ int connect_to_server(
 }
 
 
-void choose_server(rcComm_t **cn, char *host, rodsEnv *env, int verb) {
+void choose_server(rcComm_t **cn, const char *host, const rodsEnv *env, const int verb) {
     if (verb) {
         fprintf(stderr, "Chosen server is: %s\n", host);
     }
