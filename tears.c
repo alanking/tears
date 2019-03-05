@@ -226,8 +226,7 @@ int connect_to_server(
 
 int choose_server(
     rodsEnv *irods_env,
-    tears_context_t* ctx,
-    dataObjInp_t* data_obj) {
+    tears_context_t* ctx) {
 
     char* new_host = NULL;
     rErrMsg_t err_msg;
@@ -235,13 +234,14 @@ int choose_server(
                                irods_env->rodsUserName, irods_env->rodsZone,
                                0, &err_msg);
 
+    int status = 0;
     if (ctx->write_to_irods) {
-        if ((status = rcGetHostForPut(conn, data_obj, &new_host)) < 0) {
+        if ((status = rcGetHostForPut(conn, ctx->data_obj, &new_host)) < 0) {
             fprintf(stderr, "Error: rcGetHostForPut failed with status %d:%s\n", status, get_irods_error_name(status, ctx->verbose));
             return status;
         }
     } else {
-        if ((status = rcGetHostForGet(conn, data_obj, &new_host)) < 0) {
+        if ((status = rcGetHostForGet(conn, ctx->data_obj, &new_host)) < 0) {
             fprintf(stderr, "Error: rcGetHostForGet failed with status %d:%s\n", status, get_irods_error_name(status, ctx->verbose));
             return status;
         }
@@ -249,7 +249,7 @@ int choose_server(
     if (ctx->verbose) {
         fprintf(stderr, "Chosen server is: %s\n", new_host);
     }
-    rstrncpy(irods_env->rodsHost, new_host, NAME_LEN);
+    rstrcpy(irods_env->rodsHost, new_host, NAME_LEN);
     rcDisconnect(conn);
     free(new_host);
     return 0;
@@ -271,7 +271,7 @@ void setup_dataObjInp(tears_context_t* ctx) {
     if (ctx->force_write) {
         addKeyVal(&data_obj.condInput, FORCE_FLAG_KW, "");
     }
-    ctx->data_obj = data_obj;
+    ctx->data_obj = &data_obj;
 }
 
 
@@ -434,9 +434,9 @@ int main (int argc, char **argv) {
 
     setup_dataObjInp(&ctx);
 
-    status = choose_server(&data_obj, &irods_env, &ctx);
+    status = choose_server(ctx.data_obj, &irods_env, &ctx);
     if (status < 0) {
-        error_and_exit(*conn, "Error: choosing server failed with status %d\n", status, get_irods_error_name(status, ctx->verbose));
+        error_and_exit(*conn, "Error: choosing server failed with status %d\n", status, get_irods_error_name(status, ctx.verbose));
     }
 
     status = connect_to_server(&irods_env, &ctx);
