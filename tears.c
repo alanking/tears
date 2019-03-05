@@ -43,7 +43,7 @@ typedef struct {
     int verbose;
     int server_set;
     int force_write;
-    char* obj_name;
+    char* obj_path;
     int needs_disconnect;
     dataObjInp_t data_obj;
 } tears_context_t;
@@ -263,7 +263,7 @@ int choose_server(
 
 void setup_dataObjInp(tears_context_t* ctx) {
     memset(&ctx->data_obj, 0, sizeof(ctx->data_obj));
-    strncpy(ctx->data_obj.objPath, ctx->obj_name, MAX_NAME_LEN);
+    strncpy(ctx->data_obj.objPath, ctx->obj_path, MAX_NAME_LEN);
     if (ctx->write_to_irods) {
         ctx->data_obj.openFlags = O_WRONLY;
     }
@@ -400,7 +400,7 @@ int main (int argc, char **argv) {
         usage_and_exit(argv[0], EXIT_FAILURE);
     }
 
-    ctx.obj_name = argv[optind];
+    ctx.obj_path = argv[optind];
 
     if ((buffer = malloc(ctx.buf_size)) == NULL) {
         error_and_exit(conn, "Error: unable to set buffer to size %ld\n", ctx.buf_size);
@@ -420,8 +420,8 @@ int main (int argc, char **argv) {
         error_and_exit(conn, "Error: getRodsEnv failed with status %d:%s\n", status, get_irods_error_name(status, ctx.verbose));
     }
 
-    if ((status = irods_uri_check(ctx.obj_name, &irods_env, ctx.verbose)) < 0) {
-        error_and_exit(conn, "Error: invalid uri: %s\n", ctx.obj_name);
+    if ((status = irods_uri_check(ctx.obj_path, &irods_env, ctx.verbose)) < 0) {
+        error_and_exit(conn, "Error: invalid uri: %s\n", ctx.obj_path);
     } else if (status > 0) {
         ctx.server_set = 1;
     }
