@@ -193,7 +193,12 @@ int irods_uri_check(char *uri, rodsEnv *env, int verb) {
 }
 
 
-int connect_to_server(rcComm_t **conn, char *host, rodsEnv *irods_env, int verbose) {
+int connect_to_server(
+    rcComm_t** conn,
+    const char *host,
+    const rodsEnv *irods_env,
+    const int verbose) {
+
     rErrMsg_t err_msg;
     int status = 0;
     rcComm_t* new_conn = NULL;
@@ -219,12 +224,18 @@ int connect_to_server(rcComm_t **conn, char *host, rodsEnv *irods_env, int verbo
         if (verbose) {
             fprintf(stderr, "Disconnecting from current conn and using new conn\n");
         }
+
+        // disconnect old connection handle
         //if (*conn) {
             //if (verbose) {
                 //fprintf(stderr, "disconnecting conn at %p\n", *conn);
             //}
-            //rcDisconnect(*conn);
+            //status = rcDisconnect(*conn);
+            //if (status < 0) {
+                //fprintf(stderr, "disconnecting conn at %p failed with status %d\n", *conn, status);
+            //}
         //}
+
         if (verbose) {
             fprintf(stderr, "Swapping *conn with new_conn at %p\n", new_conn);
         }
@@ -295,7 +306,7 @@ int open_or_create_data_object(
     }
 
     if ((open_fd = open_func(*conn, &data_obj)) < 0) {
-        fprintf(stderr, "Error: rcGetHostForGet failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
+        fprintf(stderr, "Error: rcGetHostForGet failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
         return open_fd;
     }
 
@@ -306,6 +317,7 @@ int open_or_create_data_object(
         dataObjLseekInp.whence = SEEK_SET;
         dataObjLseekInp.l1descInx = open_fd;
         dataObjLseekInp.offset = offset_in_bytes;
+        int status = 0;
         if (status = rcDataObjLseek(*conn, &dataObjLseekInp, &dataObjLseekOut) < 0) {
             fprintf(stderr, "Error: rcDataObjLseek in file failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
             return status;
@@ -343,20 +355,13 @@ int open_data_object(
     const int force_write,
     const int verbose) {
 
-    int open_fd = open_data_object(conn, obj_name, irods_env, offset_in_bytes, write_to_irods, server_set, force_write, verbose, rcDataObjOpen);
+    int open_fd = open_or_create_data_object(conn, obj_name, irods_env, offset_in_bytes, write_to_irods, server_set, force_write, verbose, rcDataObjOpen);
     if (open_fd < 0) {
         error_and_exit(*conn, "Error: Opening file failed with status %d:%s\n", open_fd, get_irods_error_name(open_fd, verbose));
     }
     return open_fd;
 }
 
-
-void close_data_object(rcComm_t** conn, openedDataObjInp_t* open_obj, int verbose) {
-    int status = 0;
-    if ((status = rcDataObjClose(*conn, open_obj)) < 0) {
-        error_and_exit(*conn, "Error: rcDataObjClose failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
-    }
-}
 
 int main (int argc, char **argv) {
     rcComm_t           *conn = NULL;
@@ -498,7 +503,7 @@ int main (int argc, char **argv) {
             if ((read_in = rcDataObjRead(conn, &open_obj, &data_buffer)) < 0) {
                 // Agent fell over - reconnect, seek to total written and try again
                 if (SYS_HEADER_READ_LEN_ERR == read_in ||
-                    (read_in >= SYS_SOCK_READ_ERR && read_in <= SYS_SOCK_READ_ERR + 999)) {
+                    (read_in <= SYS_SOCK_READ_ERR && read_in >= SYS_SOCK_READ_ERR - 999)) {
                     connect_to_server(&conn, irods_env.rodsHost, &irods_env, verbose);
                     open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, write_to_irods, server_set, force_write, verbose);
                     fseek(stdout, total_written, SEEK_SET);
@@ -522,7 +527,7 @@ int main (int argc, char **argv) {
             if ((written_out = rcDataObjWrite(conn, &open_obj, &data_buffer)) < 0) {
                 // Agent fell over - reconnect, seek to total written and try again
                 if (SYS_HEADER_READ_LEN_ERR == written_out ||
-                    (written_out >= SYS_SOCK_READ_ERR && written_out <= SYS_SOCK_READ_ERR + 999)) {
+                    (written_out <= SYS_SOCK_READ_ERR && written_out >= SYS_SOCK_READ_ERR - 999)) {
                     connect_to_server(&conn, irods_env.rodsHost, &irods_env, verbose);
                     open_fd = open_data_object(&conn, obj_name, &irods_env, total_written, write_to_irods, server_set, force_write, verbose);
                     fseek(stdin, total_written, SEEK_SET);
@@ -549,7 +554,9 @@ int main (int argc, char **argv) {
         fprintf(stderr, "Total bytes written %ld\n", total_written);
     }
 
-    close_data_object(&conn, &open_obj, verbose);
+    if ((status = rcDataObjClose(conn, &open_obj)) < 0) {
+        error_and_exit(conn, "Error: rcDataObjClose failed with status %d:%s\n", status, get_irods_error_name(status, verbose));
+    }
 
     rcDisconnect(conn);
     free(buffer);
