@@ -237,6 +237,8 @@ int choose_server(
         return err_msg.status;
     }
 
+    fprintf(stderr, "dataObjInp_t path:[%s],obj_path:[%s]\n", ctx->data_obj.obj_path, ctx->obj_path);
+
     int status = 0;
     if (ctx->write_to_irods) {
         if ((status = rcGetHostForPut(conn, &ctx->data_obj, &new_host)) < 0) {
@@ -280,7 +282,7 @@ int open_or_create_data_object(
     rcComm_t** conn,
     const rodsEnv* irods_env,
     const unsigned long offset_in_bytes,
-    const tears_context_t* ctx,
+    tears_context_t* ctx,
     int (*open_func)(rcComm_t*, dataObjInp_t*)) {
 
     int open_fd = 0;
@@ -312,7 +314,7 @@ int open_or_create_data_object(
 int create_data_object(
     rcComm_t** conn,
     const rodsEnv* irods_env,
-    const tears_context_t* ctx) {
+    tears_context_t* ctx) {
 
     int open_fd = open_or_create_data_object(conn, irods_env, 0, ctx, rcDataObjCreate);
     if (open_fd < 0) {
@@ -326,7 +328,7 @@ int open_data_object(
     rcComm_t** conn,
     const rodsEnv* irods_env,
     const unsigned long offset_in_bytes,
-    const tears_context_t* ctx) {
+    tears_context_t* ctx) {
 
     int open_fd = open_or_create_data_object(conn, irods_env, offset_in_bytes, ctx, rcDataObjOpen);
     if (open_fd < 0) {
