@@ -236,15 +236,15 @@ int connect_to_server(
         }
 
         // disconnect old connection handle
-        //if (*conn) {
+        if (conn && *conn && ctx->needs_disconnect) {
             //if (verbose) {
                 //fprintf(stderr, "disconnecting conn at %p\n", *conn);
             //}
-            //status = rcDisconnect(*conn);
+            status = rcDisconnect(*conn);
             //if (status < 0) {
                 //fprintf(stderr, "disconnecting conn at %p failed with status %d\n", *conn, status);
             //}
-        //}
+        }
 
         if (verbose) {
             fprintf(stderr, "Swapping *conn with new_conn at %p\n", new_conn);
@@ -471,6 +471,7 @@ int main (int argc, char **argv) {
         init_client_api_table();
     #endif
 
+    ctx.needs_disconnect = 1;
     status = connect_to_server(&conn, irods_env.rodsHost, &irods_env, ctx.verbose);
     if (status < 0) {
         error_and_exit(conn, "Error: failed connecting to server with status %d\n", status);
@@ -486,6 +487,8 @@ int main (int argc, char **argv) {
         fprintf(stderr, "open_fd == %d\n", open_fd);
     }
 
+
+    ctx.needs_disconnect = 0;
 
     // the read/write loop
     while (1) {
